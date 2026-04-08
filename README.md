@@ -53,15 +53,17 @@ Secure, modern login and registration interface.
 
 ---
 
-## 🔐 Role-Based Access Control (RBAC)
+| Feature | Viewer | Analyst | Admin |
+| :--- | :---: | :---: | :---: |
+| **View Dashboard & Charts** | ✅ | ✅ | ✅ |
+| **Search & Filter Transactions** | ✅ | ✅ | ✅ |
+| **Create/Edit Transactions** | ❌ | ✅ | ✅ |
+| **Delete Transactions** | ❌ | ❌ | ✅ |
+| **View User List** | ❌ | ✅ | ✅ |
+| **Modify User Roles/Status** | ❌ | ❌ | ✅ |
 
-The system enforces three distinct access levels to ensure data security and operational integrity:
-
-| Role | Access Level | Permissions |
-| :--- | :--- | :--- |
-| **Viewer** | Read-Only | Can view Dashboard analytics and trends. No access to user management or record modification. |
-| **Analyst** | Read-Write | Can view, create, and update financial records. Can view users but cannot modify roles. |
-| **Admin** | Full Access | Complete control over financial records and user management, including role assignments and account status. |
+> [!NOTE]
+> All permissions are enforced strictly at the API layer via Django REST Framework permissions and validated through object-level serializers.
 
 ---
 
