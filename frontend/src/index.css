@@ -131,3 +131,48 @@ input, select, textarea {
   background: rgba(239, 68, 68, 0.2);
   color: #ef4444;
 }
+
+/* Cleanup: Unified Filter Components */
+.glass-input {
+  margin: 0;
+  height: 48px;
+  font-size: 0.95rem;
+  padding: 0 1rem;
+  width: auto;
+}
+
+.glass-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--secondary);
+  padding: 0 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--glass-border);
+  height: 48px;
+}
+
+.glass-date-range .label {
+  font-size: 0.8rem;
+  opacity: 0.5;
+}
+
+.glass-date-range input {
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0;
+  width: 120px;
+  font-size: 0.9rem;
+}
+
+.reset-btn {
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+.reset-btn:hover {
+  background: #ef444422;
+  transform: translateY(0);
+}

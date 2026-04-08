@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area
-} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { analyticsService, recordService } from '../services/api';
 import TransactionForm from '../components/TransactionForm';
+import FilterBar from '../components/FilterBar';
+import DashboardCharts from '../components/DashboardCharts';
+import { formatDate, formatCurrency } from '../utils/formatters';
 
 const Dashboard = () => {
     const [summary, setSummary] = useState(null);
     const [records, setRecords] = useState([]);
+    const [page, setPage] = useState(1);
+    const [totalCount, setTotalCount] = useState(0);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRecord, setEditingRecord] = useState(null);
     const [filters, setFilters] = useState({
         record_type: '',
         category: '',
-        date: ''
+        start_date: '',
+        end_date: '',
+        search: ''
     });
     const { user } = useAuth();
 
@@ -23,21 +26,35 @@ const Dashboard = () => {
         const fetchData = async () => {
             try {
                 const activeFilters = Object.fromEntries(
-                    Object.entries(filters).filter(([_, v]) => v !== '')
+                    Object.entries(filters).filter(([, v]) => v !== '')
                 );
-
-                const [summaryRes, recordsRes] = await Promise.all([
-                    analyticsService.getSummary(),
-                    recordService.getAll(activeFilters)
-                ]);
-                setSummary(summaryRes.data);
-                setRecords(recordsRes.data);
+                const canViewRecords = user.role === 'analyst' || user.role === 'admin';
+                const promises = [analyticsService.getSummary()];
+                if (canViewRecords) {
+                    promises.push(recordService.getAll({ ...activeFilters, page }));
+                }
+                const results = await Promise.all(promises);
+                setSummary(results[0].data);
+                if (canViewRecords) {
+                    setRecords(results[1].data.results);
+                    setTotalCount(results[1].data.count);
+                }
             } catch (err) {
                 console.error("Failed to fetch data", err);
             }
         };
         fetchData();
-    }, [filters]);
+    }, [filters, user.role, page]);
+
+    const handleFilterChange = (key, value) => {
+        setFilters(prev => ({ ...prev, [key]: value }));
+        setPage(1);
+    };
+
+    const handleReset = () => {
+        setFilters({ record_type: '', category: '', start_date: '', end_date: '', search: '' });
+        setPage(1);
+    };
 
     const handleCreateOrUpdate = async (data) => {
         if (editingRecord) {
@@ -69,19 +86,14 @@ const Dashboard = () => {
         setIsModalOpen(true);
     };
 
-    if (!summary) return <div>Loading dashboard...</div>;
+    if (!summary) return <div className="container">Loading dashboard...</div>;
 
-    const pieDataCategory = Object.entries(summary.by_category).map(([name, value]) => ({ name, value }));
-    const pieDataType = Object.entries(summary.by_type || {}).map(([name, value]) => ({ 
-        name: name.charAt(0).toUpperCase() + name.slice(1), 
-        value 
-    }));
-    
     const COLORS = ['#10b981', '#ef4444', '#3b82f6', '#f59e0b'];
     const TYPE_COLORS = { 'income': '#10b981', 'expense': '#ef4444', 'investment': '#3b82f6' };
 
-    const canModify = user.role === 'admin' || user.role === 'analyst';
+    const canModify = user.role === 'admin';
     const canDelete = user.role === 'admin';
+    const canViewRecords = user.role === 'analyst' || user.role === 'admin';
 
     return (
         <div className="container">
@@ -90,142 +102,125 @@ const Dashboard = () => {
                   <h1>Finance Dashboard</h1>
                   <p style={{ opacity: 0.6 }}>Welcome, {user.username}. You have {user.role} access.</p>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    {canModify && (
-                        <button onClick={openCreateModal}>+ New Transaction</button>
-                    )}
-                    <select 
-                        value={filters.record_type} 
-                        onChange={(e) => setFilters({...filters, record_type: e.target.value})}
-                        style={{ margin: 0, width: 'auto' }}
-                    >
-                        <option value="">All Types</option>
-                        <option value="income">Income</option>
-                        <option value="expense">Expense</option>
-                        <option value="investment">Investment</option>
-                    </select>
-                </div>
             </div>
             
             <div className="dashboard-grid">
                 <div className="glass-card">
                     <h3 style={{ opacity: 0.7, fontSize: '0.9rem' }}>Net Balance</h3>
                     <p style={{ fontSize: '2.5rem', fontWeight: 'bold', color: summary.total_amount >= 0 ? 'var(--accent)' : '#ef4444' }}>
-                      ${summary.total_amount.toLocaleString()}
+                      {formatCurrency(summary.total_amount)}
                     </p>
                 </div>
                 <div className="glass-card" style={{ borderLeft: '4px solid #10b981' }}>
                     <h3 style={{ opacity: 0.7, fontSize: '0.9rem' }}>Total Income</h3>
                     <p style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>
-                      ${summary.total_income.toLocaleString()}
+                      {formatCurrency(summary.total_income)}
                     </p>
                 </div>
                 <div className="glass-card" style={{ borderLeft: '4px solid #ef4444' }}>
                     <h3 style={{ opacity: 0.7, fontSize: '0.9rem' }}>Total Expenses</h3>
                     <p style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>
-                      ${summary.total_expenses.toLocaleString()}
+                      {formatCurrency(summary.total_expenses)}
                     </p>
                 </div>
             </div>
 
-            <div className="glass-card" style={{ marginTop: '2rem', height: '400px' }}>
-                <h3>Financial Trends</h3>
-                <ResponsiveContainer width="100%" height="90%">
-                    <AreaChart data={summary.trends}>
-                        <defs>
-                            <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                            </linearGradient>
-                            <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" />
-                        <YAxis stroke="rgba(255,255,255,0.5)" />
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                        <Area type="monotone" dataKey="income" stroke="#10b981" fillOpacity={1} fill="url(#colorIncome)" />
-                        <Area type="monotone" dataKey="expense" stroke="#ef4444" fillOpacity={1} fill="url(#colorExpense)" />
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
+            <DashboardCharts summary={summary} colors={COLORS} typeColors={TYPE_COLORS} />
 
-            <div className="dashboard-grid" style={{ marginTop: '2rem' }}>
-                <div className="glass-card" style={{ height: '350px' }}>
-                    <h3>Category Analysis</h3>
-                    <ResponsiveContainer width="100%" height="80%">
-                        <PieChart>
-                            <Pie
-                                data={pieDataCategory}
-                                cx="50%" cy="50%" outerRadius={60}
-                                dataKey="value" label
-                            >
-                                {pieDataCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-                <div className="glass-card" style={{ height: '350px' }}>
-                    <h3>Type Distribution</h3>
-                    <ResponsiveContainer width="100%" height="80%">
-                        <PieChart>
-                            <Pie
-                                data={pieDataType}
-                                cx="50%" cy="50%" outerRadius={60}
-                                dataKey="value" label
-                            >
-                                {pieDataType.map((entry, i) => (
-                                    <Cell key={i} fill={TYPE_COLORS[entry.name.toLowerCase()] || COLORS[i]} />
-                                ))}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
+            {canViewRecords && (
+                <div className="glass-card" style={{ marginTop: '2rem', minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ marginBottom: '1.2rem' }}>
+                        <h3 style={{ margin: 0 }}>Transaction History</h3>
+                    </div>
+                    
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.6rem',
+                        overflowX: 'auto',
+                        paddingBottom: '0.8rem',
+                        flexWrap: 'nowrap'
+                    }}>
+                        {canModify && (
+                            <button onClick={openCreateModal} style={{ height: '40px', padding: '0 0.8rem', fontSize: '0.8rem', whiteSpace: 'nowrap', minWidth: 'fit-content' }}>+ Transaction</button>
+                        )}
+                        <FilterBar 
+                            filters={filters} 
+                            onFilterChange={handleFilterChange} 
+                            onReset={handleReset} 
+                        />
+                    </div>
 
-            <div className="glass-card" style={{ marginTop: '2rem' }}>
-                <h3>Transaction History</h3>
-                <div style={{ marginTop: '1rem' }}>
-                    {records.map(record => (
-                        <div key={record.id} style={{ 
-                            display: 'flex', justifyContent: 'space-between', padding: '1rem 0', 
-                            borderBottom: '1px solid var(--glass-border)', alignItems: 'center'
+                    <div style={{ marginTop: '1rem', flex: 1 }}>
+                        {records.length === 0 ? (
+                            <div style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No records found.</div>
+                        ) : records.map(record => (
+                            <div key={record.id} style={{ 
+                                display: 'flex', justifyContent: 'space-between', padding: '1rem 0', 
+                                borderBottom: '1px solid var(--glass-border)', alignItems: 'center'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    <span style={{ 
+                                        padding: '0.2rem 0.6rem', borderRadius: '1rem', fontSize: '0.8rem', marginRight: '0.8rem',
+                                        backgroundColor: TYPE_COLORS[record.record_type] + '33',
+                                        color: TYPE_COLORS[record.record_type],
+                                        border: `1px solid ${TYPE_COLORS[record.record_type]}`
+                                    }}>
+                                        {record.record_type.toUpperCase()}
+                                    </span>
+                                    <div>
+                                      <strong>{record.title}</strong>
+                                      <div style={{ fontSize: '0.8rem', opacity: 0.5 }}>
+                                        {formatDate(record.date)} • {record.category}
+                                      </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                    <div style={{ fontWeight: '600' }}>
+                                        {formatCurrency(record.amount)}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        {canModify && (
+                                            <button className="action-btn" onClick={() => openEditModal(record)} title="Edit">✏️</button>
+                                        )}
+                                        {canDelete && (
+                                            <button className="action-btn delete" onClick={() => handleDelete(record.id)} title="Delete">🗑️</button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {totalCount > 10 && (
+                        <div style={{ 
+                            display: 'flex', justifyContent: 'center', alignItems: 'center', 
+                            marginTop: '2rem', gap: '1rem', paddingTop: '1rem',
+                            borderTop: '1px solid var(--glass-border)'
                         }}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <span style={{ 
-                                    padding: '0.2rem 0.6rem', borderRadius: '1rem', fontSize: '0.8rem', marginRight: '0.8rem',
-                                    backgroundColor: TYPE_COLORS[record.record_type] + '33',
-                                    color: TYPE_COLORS[record.record_type],
-                                    border: `1px solid ${TYPE_COLORS[record.record_type]}`
-                                }}>
-                                    {record.record_type.toUpperCase()}
-                                </span>
-                                <div>
-                                  <strong>{record.title}</strong>
-                                  <div style={{ fontSize: '0.8rem', opacity: 0.5 }}>{record.date} • {record.category}</div>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                                <div style={{ fontWeight: '600' }}>
-                                    ${record.amount}
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                    {canModify && (
-                                        <button className="action-btn" onClick={() => openEditModal(record)} title="Edit">✏️</button>
-                                    )}
-                                    {canDelete && (
-                                        <button className="action-btn delete" onClick={() => handleDelete(record.id)} title="Delete">🗑️</button>
-                                    )}
-                                </div>
-                            </div>
+                            <button 
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                                className="action-btn"
+                                style={{ padding: '0.4rem 1rem' }}
+                            >
+                                Previous
+                            </button>
+                            <span style={{ fontSize: '0.9rem', opacity: 0.7 }}>
+                                Page {page} of {Math.ceil(totalCount / 10)}
+                            </span>
+                            <button 
+                                onClick={() => setPage(p => p + 1)}
+                                disabled={page >= Math.ceil(totalCount / 10)}
+                                className="action-btn"
+                                style={{ padding: '0.4rem 1rem' }}
+                            >
+                                Next
+                            </button>
                         </div>
-                    ))}
+                    )}
                 </div>
-            </div>
+            )}
 
             <TransactionForm 
                 isOpen={isModalOpen} 

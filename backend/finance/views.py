@@ -1,8 +1,11 @@
-from rest_framework import viewsets, generics, permissions, status
+import logging
+from django.db.models import Sum
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import viewsets, generics, permissions, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Sum, Count
+from rest_framework.exceptions import ValidationError
+
 from .models import User, FinancialRecord
 from .serializers import (
     UserSerializer, 
@@ -10,30 +13,52 @@ from .serializers import (
     FinancialRecordSerializer
 )
 from .permissions import IsAdminUser, IsAnalystOrAdmin, IsViewerOrAbove
+from .filters import FinancialRecordFilter
+
+logger = logging.getLogger(__name__)
 
 class UserRegistrationView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserRegistrationSerializer
     permission_classes = [permissions.AllowAny]
 
-class UserListView(generics.ListAPIView):
+class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAdminUser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['role', 'is_active']
+    search_fields = ['username', 'email']
+
+    def get_queryset(self):
+        return super().get_queryset()
+
+    def perform_destroy(self, instance):
+        if instance == self.request.user:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("You cannot delete your own account.")
+        instance.delete()
+
+    def perform_update(self, serializer):
+        if serializer.instance == self.request.user and serializer.validated_data.get('is_active') is False:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("You cannot deactivate your own account.")
+        serializer.save()
 
 class FinancialRecordViewSet(viewsets.ModelViewSet):
     queryset = FinancialRecord.objects.all()
     serializer_class = FinancialRecordSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['date', 'category', 'record_type']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_class = FinancialRecordFilter
+    search_fields = ['title', 'description', 'category']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update']:
-            permission_classes = [IsAnalystOrAdmin]
-        elif self.action == 'destroy':
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
             permission_classes = [IsAdminUser]
-        else: # list, retrieve
-            permission_classes = [IsViewerOrAbove]
+        elif self.action in ['list', 'retrieve']:
+            permission_classes = [IsAnalystOrAdmin]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
 
     def perform_create(self, serializer):

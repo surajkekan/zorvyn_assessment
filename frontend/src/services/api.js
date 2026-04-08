@@ -44,4 +44,10 @@ export const analyticsService = {
     getSummary: () => api.get('/analytics/summary/'),
 };
 
+export const userService = {
+    getAll: (params = {}) => api.get('/users/', { params }),
+    update: (id, data) => api.patch(`/users/${id}/`, data),
+    delete: (id) => api.delete(`/users/${id}/`),
+};
+
 export default api;

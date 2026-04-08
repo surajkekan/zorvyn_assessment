@@ -8,11 +8,18 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('id', 'username', 'email', 'role', 'is_active')
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
         fields = ('username', 'password', 'email', 'role')
+
+    def validate_password(self, value):
+        if not any(char.isdigit() for char in value):
+            raise serializers.ValidationError("Password must contain at least one digit.")
+        if not any(char.isalpha() for char in value):
+            raise serializers.ValidationError("Password must contain at least one letter.")
+        return value
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
@@ -28,7 +35,7 @@ class FinancialRecordSerializer(serializers.ModelSerializer):
 
     def validate_amount(self, value):
         if value <= 0:
-            raise serializers.ValidationError("Transaction amount must be greater than zero.")
+            raise serializers.ValidationError("Transaction amount must be strictly positive.")
         return value
 
     def validate_date(self, value):
@@ -36,6 +43,16 @@ class FinancialRecordSerializer(serializers.ModelSerializer):
         if value > timezone.now().date():
             raise serializers.ValidationError("Transaction date cannot be in the future.")
         return value
+
+    def validate(self, data):
+        """
+        Object-level validation for cross-field consistency.
+        """
+        if data.get('record_type') == 'expense' and data.get('category') == 'Salary':
+            raise serializers.ValidationError({
+                "category": "Salary is typically an Income category, not an Expense."
+            })
+        return data
 
 class AnalyticsSummarySerializer(serializers.Serializer):
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
